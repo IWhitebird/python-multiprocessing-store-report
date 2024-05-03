@@ -13,11 +13,9 @@ def getStartTime(timezone : str , store_hours , TIMESTAMP) -> dict:
         
         while temp.weekday() != day:
             temp -= timedelta(days=1)
-        
         #add the temp date on localTime , but keep the time same
         
-        localTime = datetime.combine(temp.date(), localTime)
-        
+        local_datetime = datetime.combine(temp.date(), localTime)
         
         # localTime = str(localTime)
         # localTime = datetime.strptime(localTime, "%Y-%m-%d %H:%M:%S.%f")
@@ -40,5 +38,5 @@ def getStartTime(timezone : str , store_hours , TIMESTAMP) -> dict:
             if store_hour.day_of_week == i:
                 sh = store_hour
         if sh:
-            day_wise_start_end_time[i] = (localToUtc(i ,sh.start_time_local , timezone) , localToUtc(sh.end_time_local , timezone) )
+            day_wise_start_end_time[i] = (localToUtc(i , sh.start_time_local , timezone) , localToUtc(i , sh.end_time_local , timezone) )
     return day_wise_start_end_time
