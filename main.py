@@ -35,15 +35,10 @@ def delete():
 
 
 # def seed():
-    # delete()
-    # create()
-    # Seeding.Seed().SeedIt()
-    # Seeding.Seed().StoreSeeder()
-    # Seeding.Seed().StoreHoursSeeder()
-    # Seeding.Seed('csv/store.csv' , Store.Store).DynamicSeeder()
-    # Seeding.Seed('csv/store_hours.csv' , Store.StoreHours).StoreHoursSeeder()
-    # Seeding.Seed('csv/store_status.csv' , Store.StoreStatus).seeder()
+#     delete()
+#     create()
+#     Seeding.Seed().SeedIt()
 # seed()
-# delete()
+
 
 

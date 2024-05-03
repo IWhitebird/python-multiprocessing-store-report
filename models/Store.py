@@ -23,7 +23,7 @@ class StoreStatus(Base):
         INACTIVE = 'inactive'
         
     store_id : Mapped[str] = mapped_column(ForeignKey('Store.store_id'), nullable=False)
-    timestamp_utc : Mapped[str] = mapped_column(nullable=False)
+    timestamp_utc : Mapped[datetime.datetime] = mapped_column(nullable=False)
     status : Mapped[Status] = mapped_column(nullable=False)
     store_status_id : Mapped[uuid.UUID] = mapped_column(primary_key=True, nullable=False, default=uuid.uuid4)
     store : Mapped["Store"] = relationship(back_populates="statuses")

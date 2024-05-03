@@ -27,7 +27,3 @@ async def get_report(report_id: str, db: Session = Depends(get_db)):
             return report
     else:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
-
-# @router.get("/trigger_report", status_code=status.HTTP_201_CREATED, response_model=schemas.TriggerReport)
-# def trigger_report(db: Session = Depends(get_db)):
-#     return 

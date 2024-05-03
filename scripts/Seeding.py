@@ -34,13 +34,16 @@ class Seed:
         
         with Session(engine) as session:
             #Check if Store Exist
-            print(self.storeSet)
+            stores = []
             store_hours = []
             for row in data:
                 if not row[0] in self.storeSet:
-                    continue
+                    stores.append(Store(store_id=row[0], timezone_str='America/Chicago'))
+                    self.storeSet.add(row[0])
                 store_hour = StoreHours(store_id=row[0], day_of_week=row[1], start_time_local=row[2], end_time_local=row[3])
                 store_hours.append(store_hour)
+            session.add_all(stores)
+            session.commit()
             session.add_all(store_hours)
             session.commit()
     
@@ -52,9 +55,13 @@ class Seed:
         
         with Session(engine) as session:
             store_status = []
+            stores = []
             for row in data:
                 if not row[0] in self.storeSet:
-                    continue
+                    stores.append(Store(store_id=row[0], timezone_str='America/Chicago'))
+                    self.storeSet.add(row[0])
                 store_status.append(StoreStatus(store_id=row[0], status=StoreStatus.Status.ACTIVE if row[1] == 'active' else StoreStatus.Status.INACTIVE, timestamp_utc=row[2]))
+            session.add_all(stores)
+            session.commit()
             session.add_all(store_status)
             session.commit()    

@@ -1,39 +1,34 @@
+import csv
 import multiprocessing
 from datetime import datetime, timedelta
+from typing import Tuple
 from sqlalchemy.orm import Session
-from database import engine 
+from database import engine
 from models.Store import Store , StoreHours , StoreStatus, StoreReport
 from scripts import TimeUtils
 
-class CsvModel:
-    def __init__(self , store_id , uptime_last_hour , uptime_last_day , uptime_last_week , downtime_last_hour , downtime_last_day , downtime_last_week):
-        self.store_id = store_id
-        self.uptime_last_hour = uptime_last_hour
-        self.uptime_last_day = uptime_last_day
-        self.uptime_last_week = uptime_last_week
-        self.downtime_last_hour = downtime_last_hour
-        self.downtime_last_day = downtime_last_day
-        self.downtime_last_week = downtime_last_week
 
-def calculateFinalTime(day_wise_start_end_time , store_status , hours : int, TIMESTAMP):
-    cur_time = datetime.strptime(str(TIMESTAMP), "%Y-%m-%d %H:%M:%S.%f")
+
+def calculateFinalTime(day_wise_start_end_time , store_status , hours, TIMESTAMP) -> Tuple[float, float]:
+    cur_time = TIMESTAMP
     old_time = TIMESTAMP - timedelta(hours=hours)
 
     uptime = 0
     downtime = 0
     start_end_times = []
-
+    
     while(old_time <= cur_time):
         new_old_time = old_time
         new_cur_time = cur_time
-
+        
         if old_time.weekday() not in day_wise_start_end_time:
             old_time += timedelta(days=1)
             continue
-
+        
+        
         start_time_local = datetime.strptime(day_wise_start_end_time[old_time.weekday()][0] , "%Y-%m-%d %H:%M:%S.%f")
         end_time_local = datetime.strptime(day_wise_start_end_time[old_time.weekday()][1] , "%Y-%m-%d %H:%M:%S.%f")
-
+        
         if start_time_local > new_old_time:
             new_old_time = start_time_local
         if end_time_local < new_cur_time:
@@ -41,97 +36,131 @@ def calculateFinalTime(day_wise_start_end_time , store_status , hours : int, TIM
         start_end_times.append((new_old_time , new_cur_time))
         old_time += timedelta(days=1)
 
-    for st , et in start_end_times:
-        required_status = []
-        for status in store_status:  
-            if str(status.timestamp_utc)[-3:] == 'UTC':
-                status.timestamp_utc = datetime.strptime(str(status.timestamp_utc), "%Y-%m-%d %H:%M:%S.%f %Z")
-            else:
-                status.timestamp_utc = datetime.strptime(str(status.timestamp_utc), "%Y-%m-%d %H:%M:%S.%f")
-
-            if status.timestamp_utc >= st - timedelta(minutes=30) and status.timestamp_utc <= et +timedelta(minutes=30):
-                required_status.append(status)
-        #sort required_status by timestamp_utc
-        required_status.sort(key = lambda x : x.timestamp_utc)
-        for i in range(0 , len(required_status) - 1):
-            middle = required_status[i].timestamp_utc 
-            if required_status[i].timestamp_utc < st:
+    store_status = sorted(store_status, key=lambda x: x.timestamp_utc)
+    for st , et in start_end_times:  
+        for status in store_status: 
+            if status.timestamp_utc < st - timedelta(minutes=30) or status.timestamp_utc > et + timedelta(minutes=30):
+                continue
+            
+            middle = status.timestamp_utc 
+            plus_30_min = middle + timedelta(minutes=30)
+            minus_30_min = middle - timedelta(minutes=30)
+            if status.timestamp_utc < st:
                 middle = st
-            if required_status[i].timestamp_utc > et:
+            if status.timestamp_utc > et:
                 middle = et
-            plus_30_min = required_status[i].timestamp_utc + timedelta(minutes=30)
-            minus_30_min = required_status[i].timestamp_utc - timedelta(minutes=30)
-            if required_status[i].status == 'active':
+            
+            if status.status == StoreStatus.Status.ACTIVE:
                 if minus_30_min >= st:
-                    uptime += middle - minus_30_min
+                    uptime += (middle - minus_30_min).total_seconds()   
                 if plus_30_min <= et:
-                    uptime += plus_30_min - middle
+                    uptime += (plus_30_min - middle).total_seconds()   
             else:
                 if minus_30_min >= st:
-                    downtime += middle - minus_30_min
+                    downtime += (middle - minus_30_min).total_seconds()   
                 if plus_30_min <= et:
-                    downtime += plus_30_min - middle
+                    downtime += (plus_30_min - middle).total_seconds()  
+            st += timedelta(seconds=(plus_30_min - middle).total_seconds()   ) 
 
-    return uptime , downtime
+    return uptime / 60 , downtime / 60
 
 def processStores(chunk_id, stores, report_id, TIMESTAMP):
-    chunk_csv_data = ""
     chunk_results = []
-    with Session(engine) as session:
-        store_ids = [store.store_id for store in stores]
-        store_hours = session.query(StoreHours).filter(StoreHours.store_id.in_(store_ids)).all()
-        store_status = session.query(StoreStatus).filter(StoreStatus.store_id.in_(store_ids)).all()
-
+    time_to_Get = datetime.now()
+    store_ids = [store.store_id for store in stores]
+    metric = []
+    metric.append(chunk_id)
+    print("PROCESSING CHUNK", chunk_id)
+    with Session(engine) as db:
+        store_hours = db.query(StoreHours)\
+        .filter(StoreHours.store_id.in_(store_ids))\
+        .all()
+        
+        store_status = db.query(StoreStatus)\
+           .filter(
+        StoreStatus.store_id.in_(store_ids),
+        StoreStatus.timestamp_utc >= TIMESTAMP - timedelta(days=7) - timedelta(minutes=30),
+        StoreStatus.timestamp_utc <= TIMESTAMP + timedelta(minutes=30))\
+        .all()
+    
+        
+    metric.append(datetime.now() - time_to_Get)
+    time_to_Get = datetime.now()
+    
     store_info = {}
+
     for store in stores:
         store_info[store.store_id] = {
             'store': store,
-            'store_hours': [sh for sh in store_hours if sh.store_id == store.store_id],
-            'store_status': [ss for ss in store_status if ss.store_id == store.store_id]
-        }
-
+            'store_hours': [],
+            'store_status': []
+    }
+    for store_hour in store_hours:
+        store_info[store_hour.store_id]['store_hours'].append(store_hour)
+    for status in store_status:
+        store_info[status.store_id]['store_status'].append(status)
+        
     for store_id, info in store_info.items():
-        timezone = info['store'].timezone_str
-        day_wise_start_end_time = TimeUtils.getStartTime(timezone, info['store_hours'], TIMESTAMP)
+        day_wise_start_end_time = TimeUtils.getStartTime(info['store'].timezone_str, info['store_hours'], TIMESTAMP)
         uptime_last_hour, downtime_last_hour = calculateFinalTime(day_wise_start_end_time, info['store_status'], 1, TIMESTAMP)
-        uptime_last_day, downtime_last_day = calculateFinalTime(day_wise_start_end_time, info['store_status'], 24, TIMESTAMP)
+        uptime_last_day , downtime_last_day = calculateFinalTime(day_wise_start_end_time, info['store_status'], 24, TIMESTAMP)
         uptime_last_week, downtime_last_week = calculateFinalTime(day_wise_start_end_time, info['store_status'], 7 * 24, TIMESTAMP)
-        chunk_results.append(CsvModel(store_id=store_id, uptime_last_hour=uptime_last_hour, uptime_last_day=uptime_last_day,
-                                      uptime_last_week=uptime_last_week, downtime_last_hour=downtime_last_hour,
-                                      downtime_last_day=downtime_last_day, downtime_last_week=downtime_last_week))
+        chunk_results.append([store_id, uptime_last_hour, uptime_last_day / 60, uptime_last_week / 60, downtime_last_hour, downtime_last_day / 60, downtime_last_week / 60])
+    
+    metric.append(datetime.now() - time_to_Get)
+    time_to_Get = datetime.now()
 
-    for result in chunk_results:
-        chunk_csv_data += f"{result.store_id}, {result.uptime_last_hour}, {result.uptime_last_day}, {result.uptime_last_week}, {result.downtime_last_hour}, {result.downtime_last_day}, {result.downtime_last_week}\n"
+    with open(f"./reports/report_{report_id}.csv", "a", newline='') as file:
+        writer = csv.writer(file)
+        for result in chunk_results:
+            # print(result)
+            writer.writerow([result[0], result[1], result[2], result[3], result[4], result[5], result[6]])
 
-    with open(f"./reports/report_{report_id}.csv", "w") as file:
-        file.write(chunk_csv_data)
+    metric.append(datetime.now() - time_to_Get)
+    time_to_Get = datetime.now()
+    
+    with open(f"./performance/performance_report_{report_id}.csv", "a", newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([metric[0] , metric[1] , metric[2] , metric[3]])
 
-def TriggerReport(db: Session, report_id: str, TIMESTAMP = datetime.now()):
-    TIMESTAMP = datetime.strptime("2023-01-24 05:58:13.493839", "%Y-%m-%d %H:%M:%S.%f")
-    report_time_start = datetime.now()
+
+async def TriggerReport(db: Session, report_id: str, TIMESTAMP = datetime.now()):
+    report_time = datetime.now()
+    TIMESTAMP = datetime.strptime("2023-01-22 12:00:00.000000", "%Y-%m-%d %H:%M:%S.%f")
     report = db.query(StoreReport).filter(StoreReport.report_id == report_id).first()
-    print("HI 1")
     if not report:
         return "Report Not Found"
-    print("HI 2")
+    
+    with open(f"./reports/report_{report_id}.csv", "a", newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["store_id", "uptime_last_hour", "uptime_last_day", "uptime_last_week", "downtime_last_hour", "downtime_last_day", "downtime_last_week"])
+    
+    with open(f"./performance/performance_report_{report_id}.csv", "a", newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["process_no","get_data_from_db" ,"process_data" , "time_to_write_on_csv" ])
+
     stores = db.query(Store).all()
-    stores_status = db.query(StoreStatus).all()
-    # print(stores)
-    # chunk_size = 500
-    # num_chunks = (len(stores) + chunk_size - 1) // chunk_size
-    # pool = multiprocessing.Pool(4)
 
-    # for chunk_id in range(num_chunks):
-    #     chunk_start = chunk_id * chunk_size
-    #     chunk_end = min((chunk_id + 1) * chunk_size, len(stores))
-    #     chunk_stores = stores[chunk_start:chunk_end]
-    #     pool.apply_async(processStores, args=(chunk_id, chunk_stores, report_id, TIMESTAMP))
+    chunk_size = 500
+    num_chunks = (len(stores) + chunk_size - 1) // chunk_size
+    pool = multiprocessing.Pool(8)
+     
+    for chunk_id in range(num_chunks):
+        chunk_start = chunk_id * chunk_size
+        chunk_end = min((chunk_id + 1) * chunk_size, len(stores))
+        chunk_stores = stores[chunk_start:chunk_end]
+        pool.apply_async(processStores, args=(chunk_id, chunk_stores, report_id, TIMESTAMP))
+        # processStores(chunk_id, chunk_stores, report_id, TIMESTAMP)
+        # break
 
-    # pool.close()
-    # pool.join()
-    print(len(stores_status))
+    pool.close()
+    pool.join()
+
     report.status = StoreReport.PollingStatus.SUCCESS
+    with open(f"./reports/report_{report_id}.csv") as file:
+        report.report_csv = file.read()
     db.commit()
-    print("Report Completed" , datetime.now() - report_time_start); 
+    
+    print("Report Generated in"  , datetime.now() - report_time)
     return True
 
