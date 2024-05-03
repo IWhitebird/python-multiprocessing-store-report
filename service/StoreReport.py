@@ -142,7 +142,7 @@ def TriggerReport(numba , report_id):
 
     stores = db.query(Store).all()
 
-    chunk_size = 500
+    chunk_size = 15000
     num_chunks = (len(stores) + chunk_size - 1) // chunk_size
     pool = multiprocessing.Pool(8)
      
