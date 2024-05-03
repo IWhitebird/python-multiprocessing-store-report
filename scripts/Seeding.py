@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from database import engine 
 from models.Store import Store , StoreHours , StoreStatus
 
+#TODO : Add MultiProcessing
 class Seed:
     def __init__(self):
         self.storeSet : set = set()

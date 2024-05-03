@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from service import StoreReport as StoreReportService
 from models import Store
 from database import get_db
+import multiprocessing
 
 router = APIRouter(tags=['StoreReport'])
 
@@ -12,9 +13,11 @@ async def trigger_report(background_tasks : BackgroundTasks , db: Session = Depe
     db.add(report)
     db.commit()
     db.refresh(report)
+    #TODO : Send to Queue for processing
+    process = multiprocessing.Process(target=StoreReportService.TriggerReport, args=('1' , str(report.report_id)))
+    process.start()
+    background_tasks.add_task(process.join)
     
-    background_tasks.add_task(StoreReportService.TriggerReport, db, report.report_id)
-
     return report
 
 @router.get('/get_report/{report_id}')

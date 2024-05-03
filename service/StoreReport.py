@@ -124,7 +124,8 @@ def processStores(chunk_id, stores, report_id, TIMESTAMP):
         writer.writerow([metric[0] , metric[1] , metric[2] , metric[3]])
 
 
-async def TriggerReport(db: Session, report_id: str, TIMESTAMP = datetime.now()):
+def TriggerReport(numba , report_id):
+    db = Session(engine)
     report_time = datetime.now()
     TIMESTAMP = datetime.strptime("2023-01-22 12:00:00.000000", "%Y-%m-%d %H:%M:%S.%f")
     report = db.query(StoreReport).filter(StoreReport.report_id == report_id).first()
